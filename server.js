@@ -36,7 +36,7 @@ app.get("/messages/general", (req, res) => {
             return res.status(500).json({ error: err.message });
         }
         res.status(200).json(result);
-    });
+    })
 });
 
 app.get("/messages/private/:otherUserId", (req, res) => {
