@@ -31,7 +31,8 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-app.options("*", cors()); // ✅ Handle preflight
+app.options("/:path(*)", cors()); // ✅ Handle preflight (compatible with path-to-regexp v7+)
+
 
 app.use(bodyParser.json());
 
