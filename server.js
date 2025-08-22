@@ -31,8 +31,8 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-app.options("/:path(*)", cors()); // ✅ Handle preflight (compatible with path-to-regexp v7+)
-
+console.log("Mounting authRoutes at /");
+app.options("*", cors()); // ✅ Handle preflight
 
 app.use(bodyParser.json());
 
