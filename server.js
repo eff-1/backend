@@ -13,7 +13,8 @@ const PORT = process.env.PORT || 5000;
 // ✅ CORS setup for local + Render frontend
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://chat-frontend-flame-six.vercel.app" // ✅ add this
+//  "https://chat-frontend-flame-six.vercel.app" // ✅ add this
+  "https://frontend-hkw1bpje5-faruqs-projects-aeaad191.vercel.app"
 ];
 
 
