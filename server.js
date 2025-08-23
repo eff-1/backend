@@ -31,7 +31,7 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-console.log("Mounting authRoutes at /");
+// console.log("Mounting authRoutes at /");
 app.options("*", cors()); // ✅ Handle preflight
 
 app.use(bodyParser.json());
