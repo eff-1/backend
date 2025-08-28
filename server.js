@@ -8,12 +8,12 @@ import authRoutes from "./routes/authRoutes.js"; // ✅ login/signup routes
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 5000;
 
 // ✅ CORS setup for local + Render frontend
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://chat-frontend-wslj.vercel.app" // ✅ add this
+  "https://frontend-xi-lilac-17.vercel.app/" // ✅ add this
 ];
 
 app.use(
