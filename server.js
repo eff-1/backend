@@ -129,7 +129,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Real-time message sending
+  // Real-time message sending with better routing
   socket.on('send-message', async (messageData) => {
     try {
       const { tempId, sender_id, message, chatType, recipient_id, replyTo } = messageData;
@@ -158,26 +158,21 @@ io.on('connection', (socket) => {
         status: 'sent'
       };
 
-      // Send confirmation back to sender
+      // Send confirmation back to sender immediately
       socket.emit('message-delivered', { 
         tempId, 
         messageId: savedMessage.id,
-        status: 'sent'
+        status: 'delivered'
       });
 
-      // Broadcast to relevant users
       if (chatType === 'general') {
         // Broadcast to all connected clients for general chat
-        io.emit('new-message', savedMessage);
+        socket.broadcast.emit('new-message', savedMessage);
       } else {
-        // Send to both sender and recipient for private chat
+        // Send ONLY to recipient for private chat (not back to sender)
         const recipientSocket = onlineUsers.get(parseInt(recipient_id));
         
-        // Send to sender
-        socket.emit('new-message', savedMessage);
-        
-        // Send to recipient if online
-        if (recipientSocket) {
+        if (recipientSocket && recipientSocket !== socket.id) {
           socket.to(recipientSocket).emit('new-message', savedMessage);
         }
       }
@@ -479,6 +474,5 @@ app.use((req, res) => {
 
 // ✅ Start server with Socket.IO
 server.listen(PORT, () => {
-  // console.log(`🚀 Server with WebSocket support listening on port: ${PORT}`);
-  console.log(` Server with WebSocket support listening on port: ${PORT}`)
+  console.log(`Server with WebSocket support listening on port: ${PORT}`)
 });
