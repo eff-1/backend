@@ -1,9 +1,7 @@
 import postgres from 'postgres';
 import dotenv from 'dotenv';
-import dns from 'dns';
-
 dotenv.config();
-
+import dns from "dns";
 // Force IPv4 to avoid ENETUNREACH on Render/Supabase
 dns.setDefaultResultOrder("ipv4first");
 
