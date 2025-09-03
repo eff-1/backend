@@ -1,10 +1,11 @@
 import postgres from 'postgres';
 import dotenv from 'dotenv';
-import dns from "dns";
+import dns from 'dns';
+
 dotenv.config();
 
+// Force IPv4 to avoid ENETUNREACH on Render/Supabase
 dns.setDefaultResultOrder("ipv4first");
-
 
 const sql = postgres(process.env.DATABASE_URL, {
   ssl: process.env.NODE_ENV === 'production' ? 'require' : false,
