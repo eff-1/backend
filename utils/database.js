@@ -1,7 +1,10 @@
 import postgres from 'postgres';
 import dotenv from 'dotenv';
-
+import dns from "dns";
 dotenv.config();
+
+dns.setDefaultResultOrder("ipv4first");
+
 
 const sql = postgres(process.env.DATABASE_URL, {
   ssl: process.env.NODE_ENV === 'production' ? 'require' : false,
