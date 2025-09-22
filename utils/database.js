@@ -1,37 +1,31 @@
-import postgres from "postgres";
-import dotenv from "dotenv";
-import dns from "dns";
+// DATABASE.JS
+import postgres from 'postgres';
+import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Force IPv4 to avoid ENETUNREACH on Render/Supabase
-dns.setDefaultResultOrder("ipv4first");
-
-// Create SQL client
 const sql = postgres(process.env.DATABASE_URL, {
-  ssl: process.env.NODE_ENV === "production" ? "require" : false,
-  max: 10,              // Maximum number of connections
-  idle_timeout: 20,     // Close connections after 20s of inactivity
-  connect_timeout: 10,  // Connection timeout
-  connection: {
-    options: "-c statement_timeout=30000", // 30s timeout for long queries
-  },
+  ssl: process.env.NODE_ENV === 'production' ? 'require' : false,
+  max: 10, // Maximum number of connections
+  idle_timeout: 20, // Close connections after 20s of inactivity
+  connect_timeout: 10, // Connection timeout
 });
 
-// ✅ Test connection
+// Test connection
 const testConnection = async () => {
   try {
-    await sql`SELECT NOW()`;
-    console.log("✅ Database connected successfully");
+    await sql`SELECT 1`;
+    console.log('✅ Database connected successfully');
   } catch (error) {
-    console.error("❌ Database connection failed:", error);
+    console.error('❌ Database connection failed:', error.message);
     process.exit(1);
   }
 };
 
-// ✅ Initialize database tables
+// Initialize database tables
 const initializeTables = async () => {
   try {
+    // Users table
     await sql`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -43,6 +37,7 @@ const initializeTables = async () => {
       )
     `;
 
+    // Messages table
     await sql`
       CREATE TABLE IF NOT EXISTS messages (
         id SERIAL PRIMARY KEY,
@@ -59,25 +54,26 @@ const initializeTables = async () => {
       )
     `;
 
+    // Indexes for performance
     await sql`
       CREATE INDEX IF NOT EXISTS idx_messages_chat 
       ON messages(sender_id, recipient_id, created_at)
     `;
-
+    
     await sql`
       CREATE INDEX IF NOT EXISTS idx_messages_general 
       ON messages(recipient_id, created_at) 
       WHERE recipient_id IS NULL
     `;
 
-    console.log("✅ Database tables initialized");
+    console.log('✅ Database tables initialized');
   } catch (error) {
-    console.error("❌ Database initialization failed:", error.message);
+    console.error('❌ Database initialization failed:', error.message);
     throw error;
   }
 };
 
-// Run startup checks
+// Run initialization
 testConnection();
 initializeTables();
 

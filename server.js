@@ -24,19 +24,24 @@ const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // ---------- CORS Configuration ----------
+
 const allowedOrigins = [
   "http://localhost:5174",
-  "http://localhost:5173",
+  "http://localhost:5173", 
   "http://localhost:3000",
-  "https://chatiify-mauve.vercel.app"
-];
+  process.env.CORS_ORIGINS?.split(',') || []
+].flat().filter(Boolean);
 
 const corsOptions = {
   origin: function (origin, callback) {
     console.log("CORS origin:", origin);
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow requests with no origin (mobile apps, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.error(`CORS blocked origin: ${origin}`);
       callback(new Error(`CORS policy: No access from ${origin}`), false);
     }
   },

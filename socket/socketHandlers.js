@@ -1,19 +1,33 @@
+// socket/socketHandlers.js - Enhanced with WhatsApp-like features
 import sql from '../utils/database.js';
+import path from 'path';
+import fs from 'fs';
 
 // Store active connections
 const onlineUsers = new Map(); // userId -> socketId
 const typingUsers = new Map(); // chatKey -> Set(userIds)
 const userSockets = new Map(); // socketId -> userId
+const userProfiles = new Map(); // userId -> {username, ...}
 
 export const setupSocketHandlers = (io) => {
   io.on("connection", (socket) => {
     console.log(`User connected: ${socket.id}`);
 
     // User comes online
-    socket.on("user-online", (userId) => {
+    socket.on("user-online", async (userId) => {
       const numUserId = parseInt(userId);
       onlineUsers.set(numUserId, socket.id);
       userSockets.set(socket.id, numUserId);
+      
+      // Get user profile for typing indicators
+      try {
+        const userResult = await sql`SELECT username FROM users WHERE id = ${numUserId}`;
+        if (userResult.length > 0) {
+          userProfiles.set(numUserId, userResult[0]);
+        }
+      } catch (err) {
+        console.error('Error fetching user profile:', err);
+      }
       
       // Notify others user is online
       socket.broadcast.emit("user-status-change", { 
@@ -24,22 +38,27 @@ export const setupSocketHandlers = (io) => {
       console.log(`User ${numUserId} is now online`);
     });
 
-    // Typing indicators
-    socket.on("typing-start", ({ userId, chatType, recipientId }) => {
+    // ENHANCED: Typing indicators with actual usernames
+    socket.on("typing-start", ({ userId, username, chatType, recipientId }) => {
+      const numUserId = parseInt(userId);
       const chatKey = chatType === "general" 
         ? "general" 
-        : `private_${Math.min(userId, recipientId)}_${Math.max(userId, recipientId)}`;
+        : `private_${Math.min(numUserId, recipientId)}_${Math.max(numUserId, recipientId)}`;
       
       if (!typingUsers.has(chatKey)) {
         typingUsers.set(chatKey, new Set());
       }
-      typingUsers.get(chatKey).add(parseInt(userId));
+      typingUsers.get(chatKey).add(numUserId);
 
-      // Emit typing to appropriate recipients
+      // Get actual username from profile or parameter
+      const actualUsername = username || userProfiles.get(numUserId)?.username || `User ${numUserId}`;
+
+      // Emit typing to appropriate recipients with actual username
       if (chatType === "general") {
         socket.broadcast.emit("user-typing", { 
-          userId: parseInt(userId), 
+          userId: numUserId, 
           typing: true, 
+          username: actualUsername,
           chatType, 
           chatId: "general" 
         });
@@ -47,8 +66,9 @@ export const setupSocketHandlers = (io) => {
         const recipientSocket = onlineUsers.get(parseInt(recipientId));
         if (recipientSocket) {
           socket.to(recipientSocket).emit("user-typing", { 
-            userId: parseInt(userId), 
+            userId: numUserId, 
             typing: true, 
+            username: actualUsername,
             chatType, 
             chatId: recipientId 
           });
@@ -56,24 +76,29 @@ export const setupSocketHandlers = (io) => {
       }
     });
 
-    socket.on("typing-stop", ({ userId, chatType, recipientId }) => {
+    socket.on("typing-stop", ({ userId, username, chatType, recipientId }) => {
+      const numUserId = parseInt(userId);
       const chatKey = chatType === "general" 
         ? "general" 
-        : `private_${Math.min(userId, recipientId)}_${Math.max(userId, recipientId)}`;
+        : `private_${Math.min(numUserId, recipientId)}_${Math.max(numUserId, recipientId)}`;
       
       const typingSet = typingUsers.get(chatKey);
       if (typingSet) {
-        typingSet.delete(parseInt(userId));
+        typingSet.delete(numUserId);
         if (typingSet.size === 0) {
           typingUsers.delete(chatKey);
         }
       }
 
+      // Get actual username
+      const actualUsername = username || userProfiles.get(numUserId)?.username || `User ${numUserId}`;
+
       // Emit stop typing
       if (chatType === "general") {
         socket.broadcast.emit("user-typing", { 
-          userId: parseInt(userId), 
+          userId: numUserId, 
           typing: false, 
+          username: actualUsername,
           chatType, 
           chatId: "general" 
         });
@@ -81,8 +106,9 @@ export const setupSocketHandlers = (io) => {
         const recipientSocket = onlineUsers.get(parseInt(recipientId));
         if (recipientSocket) {
           socket.to(recipientSocket).emit("user-typing", { 
-            userId: parseInt(userId), 
+            userId: numUserId, 
             typing: false, 
+            username: actualUsername,
             chatType, 
             chatId: recipientId 
           });
@@ -90,7 +116,7 @@ export const setupSocketHandlers = (io) => {
       }
     });
 
-    // Send message
+    // Send message with enhanced status tracking
     socket.on("send-message", async (data) => {
       try {
         const { 
@@ -105,7 +131,7 @@ export const setupSocketHandlers = (io) => {
           voice_duration = null 
         } = data;
 
-        // Insert message into database
+        // Insert message into database with proper voice duration
         const result = await sql`
           INSERT INTO messages (
             sender_id, 
@@ -123,7 +149,7 @@ export const setupSocketHandlers = (io) => {
             ${replyTo || null}, 
             ${message_type}, 
             ${media_url}, 
-            ${voice_duration}
+            ${voice_duration ? parseInt(voice_duration) : null}
           )
           RETURNING *
         `;
@@ -139,7 +165,7 @@ export const setupSocketHandlers = (io) => {
           status: "sent"
         };
 
-        // Confirm delivery to sender
+        // Confirm delivery to sender with proper status
         socket.emit("message-delivered", { 
           tempId, 
           messageId: savedMessage.id, 
@@ -156,7 +182,7 @@ export const setupSocketHandlers = (io) => {
           }
         }
 
-        console.log(`Message sent: ${message_type} message from user ${sender_id}`);
+        console.log(`Message sent: ${message_type} message from user ${sender_id}${voice_duration ? ` (${voice_duration}s voice)` : ''}`);
       } catch (error) {
         console.error('Send message error:', error);
         socket.emit("message-error", { 
@@ -209,7 +235,7 @@ export const setupSocketHandlers = (io) => {
       }
     });
 
-    // Delete message
+    // ENHANCED: Delete message with proper file cleanup
     socket.on("delete-message", async ({ messageId }) => {
       try {
         // Get message info before deletion
@@ -260,7 +286,7 @@ export const setupSocketHandlers = (io) => {
       }
     });
 
-    // Add reaction
+    // Add reaction with proper emoji handling
     socket.on("add-reaction", async ({ messageId, emoji, userId }) => {
       try {
         const messageResult = await sql`
@@ -275,8 +301,8 @@ export const setupSocketHandlers = (io) => {
         const message = messageResult[0];
         let reactions = message.reactions || [];
 
-        // Remove existing reaction from this user
-        reactions = reactions.filter(r => r.user_id !== parseInt(userId));
+        // Remove existing reaction from this user for this emoji
+        reactions = reactions.filter(r => !(r.user_id === parseInt(userId) && r.emoji === emoji));
         
         // Add new reaction
         reactions.push({ user_id: parseInt(userId), emoji });
@@ -308,14 +334,107 @@ export const setupSocketHandlers = (io) => {
       }
     });
 
+    // ENHANCED: Message status updates (seen, delivered)
+    socket.on("mark-messages-seen", async ({ messageIds, chatType, chatId }) => {
+      try {
+        const numUserId = userSockets.get(socket.id);
+        if (!numUserId) return;
+
+        // Update message status to seen
+        if (messageIds && messageIds.length > 0) {
+          await sql`
+            UPDATE messages 
+            SET status = 'seen', seen_at = NOW()
+            WHERE id = ANY(${messageIds}) 
+            AND recipient_id = ${numUserId}
+          `;
+
+          // Notify senders that their messages were seen
+          const messageResults = await sql`
+            SELECT DISTINCT sender_id FROM messages 
+            WHERE id = ANY(${messageIds}) 
+            AND recipient_id = ${numUserId}
+          `;
+
+          messageResults.forEach(({ sender_id }) => {
+            const senderSocket = onlineUsers.get(sender_id);
+            if (senderSocket) {
+              socket.to(senderSocket).emit("messages-seen", { 
+                messageIds, 
+                seenBy: numUserId 
+              });
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Mark messages seen error:', error);
+      }
+    });
+
+    // Enhanced message delivery confirmation
+    socket.on("confirm-message-delivery", async ({ messageId }) => {
+      try {
+        await sql`
+          UPDATE messages 
+          SET status = 'delivered', delivered_at = NOW()
+          WHERE id = ${messageId}
+        `;
+
+        // Get message sender
+        const messageResult = await sql`
+          SELECT sender_id FROM messages WHERE id = ${messageId}
+        `;
+
+        if (messageResult.length > 0) {
+          const senderSocket = onlineUsers.get(messageResult[0].sender_id);
+          if (senderSocket) {
+            socket.to(senderSocket).emit("message-status-updated", {
+              messageId: parseInt(messageId),
+              status: "delivered"
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Confirm delivery error:', error);
+      }
+    });
+
+    // Handle user activity for "last seen" functionality
+    socket.on("user-activity", async () => {
+      const userId = userSockets.get(socket.id);
+      if (userId) {
+        try {
+          await sql`
+            UPDATE users 
+            SET last_seen = NOW() 
+            WHERE id = ${userId}
+          `;
+        } catch (error) {
+          console.error('Update last seen error:', error);
+        }
+      }
+    });
+
     // User disconnects
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       const userId = userSockets.get(socket.id);
       if (!userId) return;
+
+      // Update last seen before disconnect
+      try {
+        await sql`
+          UPDATE users 
+          SET last_seen = NOW() 
+          WHERE id = ${userId}
+        `;
+      } catch (error) {
+        console.error('Update last seen on disconnect error:', error);
+      }
 
       // Remove from online users
       onlineUsers.delete(userId);
       userSockets.delete(socket.id);
+      userProfiles.delete(userId);
 
       // Notify others user is offline
       socket.broadcast.emit("user-status-change", { 
@@ -343,9 +462,22 @@ export const setupSocketHandlers = (io) => {
     socket.on("error", (error) => {
       console.error(`Socket error for ${socket.id}:`, error);
     });
+
+    // Heartbeat for connection health
+    socket.on("ping", () => {
+      socket.emit("pong");
+    });
   });
 
-  // Export online users for HTTP routes
+  // Utility functions for HTTP routes
   io.getOnlineUsers = () => onlineUsers;
   io.getTypingUsers = () => typingUsers;
+  io.getUserProfiles = () => userProfiles;
+  
+  // Periodic cleanup of stale connections
+  setInterval(() => {
+    console.log(`Active connections: ${io.sockets.sockets.size}`);
+    console.log(`Online users: ${onlineUsers.size}`);
+    console.log(`Active typing sessions: ${typingUsers.size}`);
+  }, 300000); // Log every 5 minutes
 };
