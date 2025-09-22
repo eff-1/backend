@@ -25,17 +25,19 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // ---------- CORS Configuration ----------
 
+// ---------- CORS Configuration ----------
 const allowedOrigins = [
   "http://localhost:5174",
-  "http://localhost:5173", 
+  "http://localhost:5173",
   "http://localhost:3000",
-  process.env.CORS_ORIGINS?.split(',') || []
-].flat().filter(Boolean);
+  "https://chatiify-mauve.vercel.app"  // Add your actual Vercel URL
+];
 
 const corsOptions = {
   origin: function (origin, callback) {
     console.log("CORS origin:", origin);
-    // Allow requests with no origin (mobile apps, etc.)
+    
+    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.includes(origin)) {
@@ -50,6 +52,9 @@ const corsOptions = {
   credentials: true
 };
 
+// Apply CORS middleware
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // Handle preflight requests
 // ---------- Middleware ----------
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions)); // preflight handling
