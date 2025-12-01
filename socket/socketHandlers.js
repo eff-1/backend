@@ -165,20 +165,36 @@ export const setupSocketHandlers = (io) => {
           status: "sent"
         };
 
-        // Confirm delivery to sender with proper status
+        // Confirm delivery to sender - message is SENT (single tick)
         socket.emit("message-delivered", { 
           tempId, 
           messageId: savedMessage.id, 
-          status: "delivered" 
+          status: "sent"  // Single tick - message sent to server
         });
 
         // Send to recipients
         if (chatType === "general") {
           socket.broadcast.emit("new-message", savedMessage);
+          
+          // For general chat, mark as delivered immediately (double tick)
+          setTimeout(() => {
+            socket.emit("message-status-updated", {
+              messageId: savedMessage.id,
+              status: "delivered"
+            });
+          }, 100);
         } else {
           const recipientSocket = onlineUsers.get(parseInt(recipient_id));
           if (recipientSocket && recipientSocket !== socket.id) {
             socket.to(recipientSocket).emit("new-message", savedMessage);
+            
+            // Mark as delivered when recipient receives it (double tick)
+            setTimeout(() => {
+              socket.emit("message-status-updated", {
+                messageId: savedMessage.id,
+                status: "delivered"
+              });
+            }, 100);
           }
         }
 
@@ -286,9 +302,12 @@ export const setupSocketHandlers = (io) => {
       }
     });
 
-    // Add reaction with proper emoji handling
-    socket.on("add-reaction", async ({ messageId, emoji, userId }) => {
+    // FIXED: Add/Remove/Change reaction with username support
+    socket.on("add-reaction", async ({ messageId, emoji, userId, username }) => {
       try {
+        const numUserId = parseInt(userId);
+        
+        // Get message and user info
         const messageResult = await sql`
           SELECT reactions, recipient_id, sender_id FROM messages WHERE id = ${messageId}
         `;
@@ -298,14 +317,37 @@ export const setupSocketHandlers = (io) => {
           return;
         }
 
+        // Get username if not provided
+        let actualUsername = username;
+        if (!actualUsername) {
+          const userResult = await sql`SELECT username FROM users WHERE id = ${numUserId}`;
+          actualUsername = userResult[0]?.username || `User ${numUserId}`;
+        }
+
         const message = messageResult[0];
         let reactions = message.reactions || [];
 
-        // Remove existing reaction from this user for this emoji
-        reactions = reactions.filter(r => !(r.user_id === parseInt(userId) && r.emoji === emoji));
-        
-        // Add new reaction
-        reactions.push({ user_id: parseInt(userId), emoji });
+        // Check if user already reacted with this emoji
+        const existingReactionIndex = reactions.findIndex(
+          r => r.user_id === numUserId && r.emoji === emoji
+        );
+
+        if (existingReactionIndex !== -1) {
+          // TOGGLE: Remove reaction if clicking same emoji
+          reactions.splice(existingReactionIndex, 1);
+          console.log(`User ${numUserId} removed reaction ${emoji} from message ${messageId}`);
+        } else {
+          // Remove any other reaction from this user (change reaction)
+          reactions = reactions.filter(r => r.user_id !== numUserId);
+          
+          // Add new reaction with username
+          reactions.push({ 
+            user_id: numUserId, 
+            emoji,
+            username: actualUsername
+          });
+          console.log(`User ${numUserId} (${actualUsername}) added reaction ${emoji} to message ${messageId}`);
+        }
 
         // Update database
         await sql`
@@ -346,22 +388,25 @@ export const setupSocketHandlers = (io) => {
             UPDATE messages 
             SET status = 'seen', seen_at = NOW()
             WHERE id = ANY(${messageIds}) 
-            AND recipient_id = ${numUserId}
+            AND (recipient_id = ${numUserId} OR recipient_id IS NULL)
+            AND sender_id != ${numUserId}
           `;
 
-          // Notify senders that their messages were seen
+          // Notify senders that their messages were seen (blue double tick)
           const messageResults = await sql`
-            SELECT DISTINCT sender_id FROM messages 
+            SELECT DISTINCT sender_id, id FROM messages 
             WHERE id = ANY(${messageIds}) 
-            AND recipient_id = ${numUserId}
+            AND (recipient_id = ${numUserId} OR recipient_id IS NULL)
+            AND sender_id != ${numUserId}
           `;
 
-          messageResults.forEach(({ sender_id }) => {
+          messageResults.forEach(({ sender_id, id }) => {
             const senderSocket = onlineUsers.get(sender_id);
             if (senderSocket) {
-              socket.to(senderSocket).emit("messages-seen", { 
-                messageIds, 
-                seenBy: numUserId 
+              socket.to(senderSocket).emit("message-seen", { 
+                messageId: id,
+                seenBy: numUserId,
+                status: "seen"
               });
             }
           });

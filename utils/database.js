@@ -49,9 +49,20 @@ const initializeTables = async () => {
         voice_duration INTEGER,
         reply_to INTEGER REFERENCES messages(id) ON DELETE SET NULL,
         reactions JSONB DEFAULT '[]',
+        status VARCHAR(20) DEFAULT 'sent',
+        delivered_at TIMESTAMP,
+        seen_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT NOW(),
         edited_at TIMESTAMP
       )
+    `;
+    
+    // Add status columns if they don't exist (for existing databases)
+    await sql`
+      ALTER TABLE messages 
+      ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'sent',
+      ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS seen_at TIMESTAMP
     `;
 
     // Indexes for performance
