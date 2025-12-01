@@ -325,22 +325,19 @@ export const setupSocketHandlers = (io) => {
         }
 
         const message = messageResult[0];
-        let reactions = message.reactions || [];
+        let reactions = Array.isArray(message.reactions) ? message.reactions : [];
 
-        // Check if user already reacted with this emoji
+        // Check if user already reacted with this EXACT emoji
         const existingReactionIndex = reactions.findIndex(
           r => r.user_id === numUserId && r.emoji === emoji
         );
 
         if (existingReactionIndex !== -1) {
-          // TOGGLE: Remove reaction if clicking same emoji
+          // TOGGLE: Remove reaction if clicking same emoji again
           reactions.splice(existingReactionIndex, 1);
           console.log(`User ${numUserId} removed reaction ${emoji} from message ${messageId}`);
         } else {
-          // Remove any other reaction from this user (change reaction)
-          reactions = reactions.filter(r => r.user_id !== numUserId);
-          
-          // Add new reaction with username
+          // ADD: User can have multiple different emoji reactions
           reactions.push({ 
             user_id: numUserId, 
             emoji,
@@ -349,10 +346,13 @@ export const setupSocketHandlers = (io) => {
           console.log(`User ${numUserId} (${actualUsername}) added reaction ${emoji} to message ${messageId}`);
         }
 
-        // Update database
+        // Update database with proper JSONB handling
+        const reactionsJson = JSON.stringify(reactions);
+        console.log(`Updating reactions for message ${messageId}:`, reactionsJson);
+        
         await sql`
           UPDATE messages 
-          SET reactions = ${JSON.stringify(reactions)} 
+          SET reactions = ${reactionsJson}::jsonb
           WHERE id = ${messageId}
         `;
 
@@ -360,8 +360,11 @@ export const setupSocketHandlers = (io) => {
 
         // Emit to appropriate recipients
         if (!message.recipient_id) {
+          // General chat - broadcast to everyone
           io.emit("reaction-added", reactionUpdate);
+          console.log(`Broadcasted reaction update to general chat`);
         } else {
+          // Private chat - send to both users
           [message.sender_id, message.recipient_id].forEach((uid) => {
             const userSocket = onlineUsers.get(uid);
             if (userSocket) {
@@ -369,10 +372,22 @@ export const setupSocketHandlers = (io) => {
             }
           });
           socket.emit("reaction-added", reactionUpdate);
+          console.log(`Sent reaction update to private chat users`);
         }
       } catch (error) {
         console.error('Add reaction error:', error);
-        socket.emit("message-error", { messageId, error: "Failed to add reaction" });
+        console.error('Error details:', {
+          messageId,
+          emoji,
+          userId,
+          username,
+          error: error.message,
+          stack: error.stack
+        });
+        socket.emit("message-error", { 
+          messageId, 
+          error: `Failed to add reaction: ${error.message}` 
+        });
       }
     });
 
