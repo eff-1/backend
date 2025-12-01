@@ -358,21 +358,23 @@ export const setupSocketHandlers = (io) => {
 
         const reactionUpdate = { messageId: parseInt(messageId), reactions };
 
-        // Emit to appropriate recipients
+        // Emit to appropriate recipients - BROADCAST TO ALL INCLUDING SENDER
         if (!message.recipient_id) {
-          // General chat - broadcast to everyone
+          // General chat - broadcast to EVERYONE including sender
           io.emit("reaction-added", reactionUpdate);
-          console.log(`Broadcasted reaction update to general chat`);
+          console.log(`Broadcasted reaction update to general chat (${reactions.length} reactions)`);
         } else {
-          // Private chat - send to both users
-          [message.sender_id, message.recipient_id].forEach((uid) => {
-            const userSocket = onlineUsers.get(uid);
-            if (userSocket) {
-              socket.to(userSocket).emit("reaction-added", reactionUpdate);
-            }
-          });
-          socket.emit("reaction-added", reactionUpdate);
-          console.log(`Sent reaction update to private chat users`);
+          // Private chat - send to BOTH users including sender
+          const recipientSocket = onlineUsers.get(message.recipient_id);
+          const senderSocket = onlineUsers.get(message.sender_id);
+          
+          if (recipientSocket) {
+            io.to(recipientSocket).emit("reaction-added", reactionUpdate);
+          }
+          if (senderSocket) {
+            io.to(senderSocket).emit("reaction-added", reactionUpdate);
+          }
+          console.log(`Sent reaction update to private chat users (${reactions.length} reactions)`);
         }
       } catch (error) {
         console.error('Add reaction error:', error);
