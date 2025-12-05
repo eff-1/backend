@@ -326,16 +326,22 @@ export const setupSocketHandlers = (io) => {
 
         const message = messageResult[0];
         let reactions = Array.isArray(message.reactions) ? message.reactions : [];
+        
+        console.log(`\n=== REACTION DEBUG ===`);
+        console.log(`Message ${messageId} current reactions:`, JSON.stringify(reactions));
+        console.log(`User ${numUserId} (${actualUsername}) wants to react with ${emoji}`);
 
         // Check if user already reacted with this EXACT emoji
         const existingReactionIndex = reactions.findIndex(
           r => r.user_id === numUserId && r.emoji === emoji
         );
+        
+        console.log(`Existing reaction index:`, existingReactionIndex);
 
         if (existingReactionIndex !== -1) {
           // TOGGLE: Remove reaction if clicking same emoji again
           reactions.splice(existingReactionIndex, 1);
-          console.log(`User ${numUserId} removed reaction ${emoji} from message ${messageId}`);
+          console.log(`✅ REMOVED: User ${numUserId} removed reaction ${emoji}`);
         } else {
           // ADD: User can have multiple different emoji reactions
           reactions.push({ 
@@ -343,18 +349,23 @@ export const setupSocketHandlers = (io) => {
             emoji,
             username: actualUsername
           });
-          console.log(`User ${numUserId} (${actualUsername}) added reaction ${emoji} to message ${messageId}`);
+          console.log(`✅ ADDED: User ${numUserId} (${actualUsername}) added reaction ${emoji}`);
         }
+        
+        console.log(`New reactions array:`, JSON.stringify(reactions));
+        console.log(`=== END DEBUG ===\n`);
 
         // Update database with proper JSONB handling
-        const reactionsJson = JSON.stringify(reactions);
-        console.log(`Updating reactions for message ${messageId}:`, reactionsJson);
+        console.log(`Updating reactions for message ${messageId}:`, reactions);
         
-        await sql`
+        const updateResult = await sql`
           UPDATE messages 
-          SET reactions = ${reactionsJson}::jsonb
+          SET reactions = ${sql.json(reactions)}
           WHERE id = ${messageId}
+          RETURNING reactions
         `;
+        
+        console.log(`Database updated, new reactions:`, updateResult[0]?.reactions);
 
         const reactionUpdate = { messageId: parseInt(messageId), reactions };
 
